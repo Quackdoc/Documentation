@@ -5,21 +5,23 @@ date: ''
 ---
 # Advanced configuration for qemu
 
-Qemu is a very powerfull tool that may be confusing for some people. however when using it we can get some very detailed setups, and advanced setups, this page will document some more advanced features that folk may wish to utilize with qemu. the majority of this page will assume running on linux. many of these will not be compatible with windows. 
+Qemu is a very powerful tool that may be confusing for a lot people. However when using it we can get some very detailed and custom setups, this page will document some more advanced features that folk may wish to utilize with qemu. The majority of this page will assume running on linux. Many of these will not be compatible with windows. 
 
 ## Evdev
 
-one of the more useful and easy to implement features of qemu is evdev passthrough. doing this can enable low latency and a better by using hotkeys to globally toggle device passthrough. 
+One of the more useful and easy to implement features of qemu is evdev passthrough. Doing this can enable low latency and a better by using hotkeys to globally toggle device passthrough. 
 
-there are two methods of doing this, we can use `virtio-input-host` and we can attach evdev to `virtio-mouse` and `virtio-keyboard`. using `virtio-input-host` will give the guest exclusive accsess to the device, and will implicitly setup the proper device. this may cause bugs, and is likely not what all users would like, however this might be helpful for unique devices that don't fall under traditional inputs, and won't work with usb passthrough 
+There are two methods of doing this, we can use `virtio-input-host` and we can attach evdev to `virtio-mouse` and `virtio-keyboard`.Using `virtio-input-host` will give the guest exclusive accsess to the device, and will implicitly setup the proper device. This may cause bugs, and is likely not what all users would like, however this might be helpful for unique devices that don't fall under traditional inputs, and won't work with usb passthrough 
 
-`virtio-input-host` is fairly easy to setup simply add the below to add a multi-touch device through to the VM.
+`virtio-input-host` is fairly easy to setup simply add. It does However comes at the detriment that you cannot use a hotkey to bind it back to the host without closing the VM. It accepts both `eventx` device files, as well as works with `by-id` paths. However the strength of it comes from being able to use any evdev device. This includes gamepads, some multitouch screens and more.
+
+The below to add a multi-touch device through to the VM.
 
 ```
 -device virtio-input-host,id=touch0,evdev=/dev/input/eventX
 ```
 
-a minimal example of this would be 
+A minimal example of this would be 
 
 ```bash
  #!/bin/bash
@@ -32,14 +34,13 @@ a minimal example of this would be
  -device virtio-input-host,id=touch0,evdev=/dev/input/eventx
 ```
 
-attaching to `virtio-keyboard` and `virtio-mouse` are probably the route most will like to go. this will allow you to attach evdev to an existing device. we need to attach the below output to qemu corresponding device ids 
+The more common option would be attaching evdev devices to `virtio-keyboard` and `virtio-mouse`. This will allow us to toggle back and forth between the the guest VM and the host OS. We need to attach the below output to qemu corresponding device ids.
 
 ```
  -object input-linux,id=mouse1,evdev=/dev/input/by-id/MOUSE_NAME
  -object input-linux,id=kbd1,evdev=/dev/input/by-id/KEYBOARD_NAME,grab_all=on,repeat=on
 ```
-
-a functional example of this would be 
+A functional example of this would be 
 
 ```bash
  #!/bin/bash
@@ -55,11 +56,11 @@ a functional example of this would be
  -object input-linux,id=kbd1,evdev=/dev/input/by-id/KEYBOARD_NAME,grab_all=on,repeat=on
 ```
 
-by default you can use left and right `ctrl` together to change whether the device is used by the host or the VM.
+By default you can use left and right `ctrl` together to change whether the device is used by the host or the VM.
 
 ## Flexible bash scripting
 
-some folks who add and remove options from qemu may find that the current script setups are more of a hassle to use. however we can set up scripts using arrays instead this can allow users to comment out arguments from the script without breaking script, which is useful for prototyping. this does however pose some issues, that will be explained under the `booting a physical install` section
+Some people who add and remove options from qemu often may find that the current script setups are more of a hassle to use. However we can set up scripts using arrays instead this can allow users to comment out arguments from the script without breaking script. This is very useful for prototyping as this allows us to more efficently test and comment out various arguments. This does however pose some issues which will be explained under the `booting a physical install` section.
 
 
 ```bash
@@ -90,24 +91,24 @@ qemu-system-x86_64 ${array[@]}
 
 ## VFIO
 
-Many folk may wish to pass a physical PCIe through to the VM, this can be helpful for people looking to make a gaming setup using bliss, or perhaps more unique setups. Qemu and Crosvm both allow doing this. with libvirt this is unbinding, and binding handled mostly automatically. you still need to load the vfio module yourself (see below).
+You may wish to pass a physical PCIe through to the VM. This can be helpful for people looking to make a gaming setup using bliss, or perhaps more unique setups. Qemu and Crosvm both allow doing this. With libvirt this is unbinding, and binding handled mostly automatically. You still need to load the vfio module yourself (see below).
 
-This article will assume you have prepared IOMMU for passthrough, there are many guides on how to find your IOMMU grouping. If you have a bad grouping it is typically possible to override them using ACS override. be warrened this is a potential security risk and could be dangerous for host security. ACS will not be elaborated any further in this and it is totally an `At your own risk` solution.
+This article will assume you have prepared IOMMU for passthrough, there are many guides on how to find your IOMMU grouping. If you have a bad grouping it is typically possible to override them using ACS override. Be warned, this is a potential security risk and could be dangerous for host security. ACS will not be elaborated any further in this and it is totally an `At your own risk` solution.
 
-First we need to prepare the device(s) we are going to passthrough, the command to achieve this is below, however it requires root being done by root, not simply with root permissions, so the easiest way to do this is to use `su -c`. but first we need the pcie function address and the pcie driver, to get this we can use `lspci | grep -i <vendor>` to find the function address. we can then use `lspci -vvnn -s xx:xx.x` to get the pci device driver too. it will be listed under `kernel modules: <pci_device_driver>`. after that we need to append the domain to it, for the majority of users it will be `0000:`. below is an example command line
+First we need to prepare the device(s) we are going to passthrough, the command to achieve this is below. It requires root being done by root, not simply with root permissions. The easiest way to do this is to use `su -c`. but first we need the pcie function address and the pcie driver. To get this we can use `lspci | grep -i <vendor>` to find the function address. We can then use `lspci -vvnn -s xx:xx.x` to get the pci device driver too. It will be listed under `kernel modules: <pci_device_driver>`. After that we need to append the domain to it, for the majority of users it will be `0000:`. Below is an example command line.
 
 
 ```bash
 su -c 'echo 0000:<function_address> > /sys/bus/pci/drivers/<pci_device_driver>/unbind' 
 ```
 
-after we have unmounted the drive we need to bind to vfio this is done in a similar manor with the command below however we need to load the vfio module and use the vid:pid of the device, the VID and PID will be printed in `lspci -nn xx:xx.x` an example output would be; in the case below the vid and pid would be `8086 56a5`.
+After we have unmounted the drive we need to bind to vfio. This is done in a similar manor with the command below, however we need to load the vfio module and use the vid:pid of the device. The VID and PID will be printed in `lspci -nn xx:xx.x` an example output would, in the case below where the vid and pid would be `8086 56a5` be,
 
 ```
 0d:00.0 VGA compatible controller [0300]: Intel Corporation DG2 [Arc A380] [8086:56a5] (rev 05)
 ```
 
-using the above output we would do the below command to bind the DG2 graphics card to VFIO.
+Using the above output we would do the below command to bind the DG2 graphics card to VFIO.
 
 If you have multiple GPUs with the same vendor and product IDs, you will need to use same gpu passthrough techniques. Arch wiki's PCI_passthrough page provides a number of possible scripts one can use to make this possible. 
 
@@ -119,8 +120,7 @@ su -c 'echo 8086 56a5 > /sys/bus/pci/drivers/vfio-pci/new_id"'
 ```
 
 
-
-you can instead add this to module autoload using your init system, this can be done various ways such as mkinitcpio and systemd, an example of a systemd setup would be;
+You can instead add this to module autoload using your init system, this can be done various ways such as mkinitcpio and systemd, an example of a systemd setup would be;
 
 ```
 /etc/modules-load.d/vfio.conf
@@ -128,7 +128,7 @@ you can instead add this to module autoload using your init system, this can be 
 vfio-pci
 ```
 
-after the card is loaded into VFIO we can then load it into qemu using the below argument. the second device is because we need to passthrough any additional function devices seperately, this include audio and on some gpus USB controllers.
+After the card is loaded into VFIO we can then load it into qemu using the below argument. The second device is because we need to passthrough any additional function devices seperately, this include audio and on some gpus USB controllers.
 
 All devices in the iommu group should to be bound to the VM.
 
@@ -137,7 +137,7 @@ All devices in the iommu group should to be bound to the VM.
 -device vfio-pci,host=<function_address>
 ```
 
-it may also be necssary to specify the `pcie-root-port` device.  below is a small example of this
+It may also be necssary to specify the `pcie-root-port` device.  Below is a small example of this
 
 ```
     -device pcie-root-port,id=pcie.1,bus=pcie.0,addr=1c.0,slot=1,chassis=1,multifunction=on \
@@ -145,7 +145,7 @@ it may also be necssary to specify the `pcie-root-port` device.  below is a smal
     -device vfio-pci,host=<function_address>,bus=pcie.1,addr=00.1
 ```
 
-it's a good idea to explicitly disable attaching any other displays to qemu by passing the arguments
+It is a good idea to explicitly disable attaching any other displays to qemu by passing the arguments
 
 ```
 -nographic -vga none
@@ -153,7 +153,7 @@ it's a good idea to explicitly disable attaching any other displays to qemu by p
 
 ## Booting physical media
 
-below is an example of booting a physical install where a second drive is mounted to `nvme` and bliss is installed in the folder called `android`. However there is a small issue, due to how arays work under bash, this can complicate how variables and strings work, meaning that sometimes it is better to simply avoid using them in the array, thankfully that does not pose too much issues in the majority of cases.
+Below is an example of booting a physical install where a second drive is mounted to `nvme` and bliss is installed in the folder called `android`. However there is a small issue, due to how arays work under bash, this can complicate how variables and strings work, meaning that sometimes it is better to simply avoid using them in the array, thankfully that does not pose too much issues in the majority of cases.
 
 
 ```bash
@@ -206,23 +206,23 @@ qemu-system-x86_64 ${args[@]} \
 
 ## USB passthrough
 
-In qemu, there are three main ways to achieve USB passthrough. `Spice`, `VFIO` and `usb-host`. when using `usb-host` we can passthrough either a `hub` device or a specifc usb device. I have typically had poor experience using hub passthrough in the past so I would reccomend prefering single device passthrough. 
+In qemu, there are three main ways to achieve USB passthrough. `Spice`, `VFIO` and `usb-host`. When using `usb-host` we can passthrough either a `hub` device or a specifc usb device. I have typically had poor experience using hub passthrough in the past so I would reccomend prefering single device passthrough. 
 
-the most simple way to do this is typically the best, simply run `lsusb` and grab the `VID:PID` of the device you wish to passthrough, then use `-device usb-host` to add it to the VM. 
+The most simple way to do this is typically the best, simply run `lsusb` and grab the `VID:PID` of the device you wish to passthrough, Then use `-device usb-host` to add it to the VM. 
 
-instead of simply adding `-usb` we can add specific controllers instead, an example would be, `-device qemu-xhci`.
+Instead of simply adding `-usb` we can add specific controllers instead, an example would be.
 
 ```
-    -usb \
+    -device qemu-xhci \
     -device usb-host,vendorid=0xVID,productid=0xPID,id=$SOMETHINGHERE
 ```
 
-in some cases it might be more suitable to attach the device using it's address;
+In some cases it might be more suitable to attach the device using it's address;
 ```
     -usb \
     -device usb-host,hostbus=bus,hostaddr=addr
 ```
-and in other cases you can use the below command to passthrough via hostbus and host port, which is useful for passthing through usb hubs. finding the appropriate hub or device can be done using `lsusb -t`
+In other cases you can use the below command to passthrough via hostbus and host port, which is useful for passthing through usb hubs. Finding the appropriate hub or device can be done using `lsusb -t`
 ```
     -usb \
     -device usb-host,hostbus=bus,hostport=port
@@ -230,15 +230,15 @@ and in other cases you can use the below command to passthrough via hostbus and 
 
 
 
-It is always a good idea to append an appropriate ID to the device, in case of a keyboard, simply do `id=keyboard` in the case of a thumbdrive, you can do `id=usb-drive`.
+It is always a good idea to append an appropriate ID to the device, in case of a keyboard, simply do `id=keyboard` in the case of a thumbdrive, you can do `id=usb-drive`. This is largely preference.
 
-for using spice, it will be explained in more depth below, however in the spice client, you will need to enable usb-passthrough, and select the appropriate device there.
+For using spice, It will be explained in more depth below, however in the spice client you will need to enable usb-passthrough and select the appropriate device there.
 
-for VFIO simply pass the appropriate USB controller through to the VM using vfio above. using `lsusb -t` to locate the controller and `lspci` can be useful for determing what devices to passthrough.
+For VFIO simply pass the appropriate USB controller through to the VM using vfio above. Using `lsusb -t` to locate the controller and `lspci` can be useful for determing what devices to passthrough.
 
 USB devices can be hotplugged using the Qemu Human Monitor explained below.
 
-## Low latency Jack/Pipewire audio
+## Low latency Pipewire audio
 
 Using qemu, we can instead of using pulse audio backend, use jack. this is very useful since we can use jack for higher quality and lower latency audio, as well as a highly configurable two way audio. this is great because Bliss and other android x86 operating systems have a quite high base latency. 
 
@@ -271,14 +271,20 @@ we can also do a bit more tunning by setting `PIPEWIRE_LATENCY` when we do this,
 export PIPEWIRE_LATENCY=128/48000
 ```
 
+However jack is not the only options we have, we also have Alsa output. this is about as direct as you can get automatically outputs to headphones and microphone properly, and is still controlled via pipewire. however audio quality of it can be greatly dependant on the host PC. so while not reccomended you can try it by using `-audiodev alsa,id=alsa0` instead of `-audiodev jack,id=jack0...`
+
+Testing `SDL` audio output is fine, but is higher latency then `Jack` so it would be typically not reccomended.
+
+As for the emulated audio devices, AC97 is the lowest latency, but may suffer in audio quality. There are multiple other audio devices however at this time I do not have a method for testing latency in them. The reccomendation for low latency audio is `AC97` but for general use it is `-device ich9-intel-hda -device hda-duplex`.
+
 This open the doors to advanced audio manipluation and high quality audio from android. this can be useful for gaming as well as game recording since you could connect to a virtual device which could then be connected to both headphones and OBS. 
 
-this also opens the way for high fidelity audio though it is currently not reccomended to go above 48000 hz on bliss at this time due to potential audio distorting. 
+This also opens the way for high fidelity audio though it is currently not reccomended to go above 48000 hz on bliss at this time due to potential audio distorting. 
 
 ## EGL-headless for remote VMs
-Egl headless is useful for remote VMs. A remote VM being a virtual machine hosted on a seperate machine that the user is connecting from. much like `-display sdl,gl=on` or `-display spice,gl=on` this provides 3d acceleration. however unlike the two previous, this does not open a window on the server. this means you can use spice-app to connect to the VM over a network. 
+Egl headless is useful for remote VMs. A remote VM being a virtual machine hosted on a seperate machine that the user is connecting from. Much like `-display sdl,gl=on` or `-display spice,gl=on` this provides 3d acceleration. However unlike the two previous, this does not open a window on the server. This means you can use spice-app to connect to the VM over a network. It may also have lower preformance then the alternative.
 
-you can use `rendernode=` to specify the gpu, this can be helpful to select a secondary gpu, or perhapps if you have many VMs running at the same time to spread the load across multiple GPUs.
+You can use `rendernode=` to specify the gpu, this can be helpful to select a secondary gpu, or perhapps if you have many VMs running at the same time to spread the load across multiple GPUs.
 
 ```
 -display egl-headless,rendernode=/dev/dri/renderD128
@@ -286,7 +292,7 @@ you can use `rendernode=` to specify the gpu, this can be helpful to select a se
 
 ## Spice
 
-Spice is a method of interacting with VMs it can work both locally and over a network. it supports realtively advanced features such as usb redirection, video compression, and more. there are two ways to add spice to the VM, one for local machine, and one for remote machine. below is an example of a local machine
+Spice is a method of interacting with VMs it can work both locally and over a network. It supports realtively advanced features such as usb redirection, video compression, and more. There are two ways to add spice to the VM, one for local machine, and one for remote machine. below is an example of a local machine.
 
 ```
     -device virtio-vga-gl -display spice-app,gl=on -device ac97 \
@@ -294,7 +300,7 @@ Spice is a method of interacting with VMs it can work both locally and over a ne
     -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
 ```
 
-and below this is an example of a remote machine. it's important to remeber to setup firewall and/or portforwarding to allow remote connections.
+And below this is an example of a remote machine. It's important to remeber to setup firewall and/or portforwarding to allow remote connections.
 
 ```bash
     -spice port=3001,disable-ticketing -device ac97 -device virtio-vga-gl -display egl-headless \
@@ -302,7 +308,7 @@ and below this is an example of a remote machine. it's important to remeber to s
     -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
 ```
 
-to setup usb redirection you can copy the below block into your config. for each device you want to be able to redirect, you need to add a `chardev` device and a `usb-redir` slot. these will let you dynamically change what devices you want to passthrough
+To setup usb redirection you can copy the below block into your config. For each device you want to be able to redirect, you need to add a `chardev` device and a `usb-redir` slot. These will let you dynamically change what devices you want to passthrough.
 
 ```bash
 #redirect up to 3 devices
@@ -317,18 +323,18 @@ https://www.spice-space.org/spice-user-manual.html
 
 ## Human Monitor
 
-Instead of connecting tty to the terminal, we can also connect Qemu Human Monitor to the terminal. this is an interface that allows us to send commands to a running VM inorder to interact with it, we can send shutdown and reset signals, add and remove usb and storage devices. as well as more advanced features like resize disks, dump the framebuffer (a sort of over glorified screenshot) and create VM snapshots. it is a very powerful tool and only some of the more common uses will be outlined here. 
+Instead of connecting tty to the terminal, we can also connect Qemu Human Monitor to the terminal. This is an interface that allows us to send commands to a running VM in order to interact with it. We can send shutdown and reset signals, add and remove usb and storage devices. As well as more advanced features like resize disks, dump the framebuffer (a sort of over glorified screenshot) and create VM snapshots. It is a very powerful tool and only some of the more common uses will be outlined here. 
 
-first thing is to add it to the VM. while with bliss it might be common to use `-serial stdio`, that will conflict with using qemu human monitor, what we instead want to use is `-monitor stdio`. if you need both, we can use `-serial mon:stdio` which will multiplex the serial connection and the qemu human monitor. you can swap between the two using `CTRL + a` then press `c`. that will swap between the serial and the human monitor. 
+First thing is to add it to the VM. While with bliss it might be common to use `-serial stdio`, that will conflict with using qemu human monitor, what we instead want to use is `-monitor stdio`. If you need both, we can use `-serial mon:stdio` which will multiplex the serial connection and the qemu human monitor. You can swap between the two using `CTRL + a` then press `c`. That will swap between the serial and the human monitor. 
 
-when using spice, the human monitor will already be attached to it, so do not add commands to attach human monitor to qemu itself.
+When using spice, the human monitor will already be attached to it, so do not add commands to attach human monitor to qemu itself.
 
-the other option you have is to connect either the serial connection or the monitor connection to a socket, then interfacing with it over said socket. however most people will likely not use this route. it is therefor reccomended to simply use 
+The other option you have is to connect either the serial connection or the monitor connection to a socket, then interfacing with it over said socket. However most people will likely not use this route. It is therefore reccomended to simply use;
 
 ```
 -serial mon:stdio
 ```
-however a short list of examples alternatives are below, there are more options.
+However a short list of examples alternatives are below, there are more options.
 
 ```bash
 -monitor tcp:127.0.0.1:55555,server,nowait #tcp session
@@ -336,7 +342,7 @@ however a short list of examples alternatives are below, there are more options.
 -monitor unix:qemu-monitor-socket,server,nowait #unix socket
 ```
 
-Now that we have the human monitor attached to the VM, we can get to some of the command we can do with it. below will be some commands with a brief writeup, to learn more about how to use the command read the link below
+Now that we have the human monitor attached to the VM, we can get to some of the command we can do with it. Below will be some commands with a brief writeup, to learn more about how to use the command read the link below;
 
 ```bash
 system_reset #reboot the system
