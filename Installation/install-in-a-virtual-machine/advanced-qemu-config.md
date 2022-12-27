@@ -5,7 +5,11 @@ date: ''
 ---
 # Advanced configuration for qemu
 
-Qemu is a very powerful tool that may be confusing for a lot people. However when using it we can get some very detailed and custom setups, this page will document some more advanced features that folk may wish to utilize with qemu. The majority of this page will assume running on linux. Many of these will not be compatible with windows. 
+Qemu is a very powerful tool that may be confusing for a lot people. However when using it we can get some very detailed and custom setups, this page will document some more advanced features that folk may wish to utilize with qemu. The majority of this page will assume running on linux. Many of these will not be compatible with windows. While this guide is oriented towards android. Many of the same concepts apply to general VM usage.
+
+Many of the concepts on this page will not apply to all users, If you have been linked This document is a document and this warning is still present, This document is a `Draft Document` and is subject to change and should be assumed that information is wrong until proof read. For any corrections ping `@Quackdoc` on the github tracker for the documentation. 
+
+Any questions can be asked on the Bliss OS telegram, Matrix, and Discord groups. Ping `@quackdoc` `@Quack Doc`.
 
 ## Evdev
 
@@ -366,6 +370,137 @@ mouse_move #move the mouse
 screendump #screenshot.ppm # dump screen into ppm image
 ```
 
-
-
 https://qemu-project.gitlab.io/qemu/system/monitor.html
+
+## Memory Balooning and misc tweaks
+FINISH ME
+
+## Disk Optimization
+
+There is a LOT we can do for disk optimization! This section will be as condensed as possible while still giving you a good idea at what these features are doing. Because of this do not expect this section to be as clear as the other sections.Because there is a lot we need to cover here.
+
+NOTE: If you want to run many VMs off of a single drive, or an array, your considerations can be very different and some of these will not apply for you! this section is written based on the assumption that one, or maybe VMs are being run on the computer!
+
+### Qcow2 vs raw image
+
+When it comes to whether or not you should use qcow2 vs raw image, this really comes down to what you as a user want out of the images. First talking about preformance. Raw vs Qcow2, under normal circumstances, should typically have similar preformance. however, Qcow2 can certainly be slow under the right (or perhaps better put wrong), circumstances.
+
+If you want a simple answer to the question "Which format will give me the best preformance?" the answer is raw image. If you don't want any advanced features like compression or snapshots, you can skip the rest of the disk section.
+
+### Preallocation 
+
+Preallocation is put simply, how the VM decides to assign storage blocks when no data is actually inside of them. with `preallocation=none` no data is pre assigned. this means that the disk image is very small, and will grow as more data gets written to it. when you choose `metadata` it pre allocates space for metadata, this means an empty VM disk will take up more space then one with `none`.
+
+In most cases, the user will probably just want metadata. as it gives the best preformance to space and features. falloc and full preallocation will cause the VM to use up more space. however in accordance with the chart below, preformance goes up when you go down the chain. But you do start to loose some features, as `full` will cause snapshots to no longer work.
+
+```
+none 
+metadata
+falloc
+full
+```
+
+### Compression
+FINISHME 
+
+### Cache Modes
+
+Qemu supports a variety of disk write `cache` modes. FINISHME
+
+### Custom cache size
+With qemu we can set both `cache` size and `l2 cache` size
+
+`...disk.qcow2,cache-size=16M`
+
+`...disk.qcow2,l2-cache-size=4M` where `1M` is good for `8Gb` of random R/W. `Areasize / (clustersize / 8)` where default cluster size is `64kb`. and area size is the total ammount of space you want cache to cover.`1/8th` of `64kb` is a nice `8kb`.
+
+In this example we can say we want `16gb` of r/w headroom, we do `16gb / 8kb`. An easier way to calculate this by hand would be to scientifc notation. this would be `32x10^9 / 8x10^3 = 4x10^6 = 4mb`
+
+```
+1KB = 10^3
+1MB = 10^6
+1GB = 10^9
+1PB = 10^12
+etc
+```
+
+Try increasing cluster size instead `qemu-img create -f qcow2 -o cluster_size=2M`
+
+*Try mixing `2m cluster` and `metadata` for a good blend of preformance!*
+
+
+### Snapshots
+FINISHME
+### Raw Block Device and LVM
+FINISHME
+
+### IoThread
+
+IO threads can help both raw and qcow2 when using virtio drives
+
+```
+-object iothread,id=iothread0
+-device virtio-blk-pci,iothread=iothread0,id=...
+-device virtio-scsi-pci,iothread=iothread0,id=...
+```
+### EroFS to SFS (or the other way around)
+
+Bliss Is currently shipping with `EroFS`. `EroFS` is has the best raw read speed of the supported read only filesystems. however it has a significant compromise in being the compression. `EroFS` only supports `LZMA` and `LZ4` compression. `LZMA` is too slow for viable use across the board, so `LZ4` is used. The issue is that `LZ4` is but one of many compression formats, and while it has the best decompression speed, it certainly doesn't have the best compression.
+
+So there are two reasons why you would want to recompress `system.img` using SquashFS. The first one being wanting to simply shrink the the size of system.img. As of the time of writing this, the `EroFS` image takes up 2.01Gb. When compressing system.img with default `zstd` settings, you can compress that down to 1.80~Gb. This itself is a decent size savings, which can be compressed a bit further. 
+
+Which is where the second benefit is. Some hardware, particulairly MMC and HDD based storage might be able to achieve a bit of a read speed increase due to shifting the burden of data from the storage device, to the CPU. 
+
+Like wise, if you have an `SFS` image, you might be better suited to convert it to `EroFS` if you are willing to sacrafice a bit of storage space. You can simply swap the commands to those appropriate for making am `EroFS` image.
+
+```bash
+sudo modprobe erofs # Many distros will ship EroFS but it won't be enabled by default
+sudo mount -o loop system.efs /mnt 
+mksquashfs /mnt system.sfs -comp zstd # you can choose from a couple different formats but ZSTD is the main benefit here
+sudo umount /mnt
+rm system.efs
+```
+
+If you wanted to keep using `EroFS` but use the slower but best in class compression LZMA, you could use the below sample.
+
+```bash
+sudo modprobe erofs
+mv system.efs system-old.efs
+sudo mount -o loop system-old.efs
+mkfs.erofs -c xz system.efs /mnt
+sudo umount /mnt
+rm system-old.efs
+```
+
+### Q&A about qemu's drives
+Q: `virtio-blk` vs `virtio-scsi`
+A: `Virtio-blk` is usually faster across the board, however is limited in the ammount of drives, probably not an issue for most
+
+Q: what is the best  `Cache` mode to use?
+A: you typically want `cache=none`
+
+Q: My VM has terrible write speeds, and it is even effecting my host
+A: disable COW on btrfs and other COW systems
+
+Q: `lazy_refcounts` Can cause corruption! but is it worth it?
+A: Typically yes. preformance can increase by a good amount at the trade off of accidental power off. but disable it if you change the `cache` mode to `none`.
+
+https://events19.lfasiallc.com/wp-content/uploads/2017/11/Storage-Performance-Tuning-for-FAST-Virtual-Machines_Fam-Zheng.pdf
+
+
+## Considerations for multiple VMs at once
+
+Handling multiple VMs efficently can be a complicated topic, and is likely out of consideration for anyone following this guide. Such is why this tidbit is at the bottom of the page, but these can be useful considerations to have. This bit is just a few tips to make running more then a couple VMs a better experience. I suspect anyone who would find use from this would be leaning to use `proxmox` or a `libvirt` based solution. The concepts in this page still apply, even if the implementation can vary. As such this tidbit will still be included.
+
+When installing `Bliss`, It might be a good idea to break up the Disks, you only need one `system` disks for the VMs. The `system` image will always be readonly when done in such a setup, which is fine since `EroFS` doesn't allow us to modify system anyways. This can save many gigabytes of data storage, and increase storage performance across the storage of any potentially effected drives. 
+
+Another good idea is to consider what VMs need persistant memory and which ones don't. If you are running many VMs at once, whether it be for a cloud solution or a more tailored setup, you may find that you don't want many, or even any of the VMs to retain any modifications to them.
+
+It's important to remeber that when scaling up, your considerations need to change when tunning the VMs. Instead of making every VM as fast as possible. It might be more wise to make it as efficient as possible. 
+
+Aside from considerations like this, I **highly** reccomend reading the free `redhat` docs on setting up and tuning VMs. It will be a lot of reading. It will however be for more valuble then most resources you can freely find on the internet. It should be the first stop for anyone wanting to actually learn more and implement these kinds of setups for yourself.
+
+The next freely accessible resource is the `oVirt` forums, documentation, and most importantly Mailing list. `oVirt` is an enterprise grade solution built upon libivrt so many of the solutions and concepts will directly apply when using libvirt, and can be used to gain a futher understanding of VM infranstructure in general.
+
+https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/virtualization_tuning_and_optimization_guide/index
+
