@@ -15,9 +15,9 @@ Any questions can be asked on the Bliss OS telegram, Matrix, and Discord groups.
 
 One of the more useful and easy to implement features of qemu is evdev passthrough. Doing this can enable low latency and a better by using hotkeys to globally toggle device passthrough. 
 
-There are two methods of doing this, we can use `virtio-input-host` and we can attach evdev to `virtio-mouse` and `virtio-keyboard`.Using `virtio-input-host` will give the guest exclusive accsess to the device, and will implicitly setup the proper device. This may cause bugs, and is likely not what all users would like, however this might be helpful for unique devices that don't fall under traditional inputs, and won't work with usb passthrough 
+There are two methods of doing this, we can use `virtio-input-host` and we can attach evdev to `virtio-mouse` and `virtio-keyboard`.Using `virtio-input-host` will give the guest exclusive accsess to the device, and will implicitly setup the proper device. This may cause bugs, and is likely not what all users would like, however this might be helpful for unique devices that don't fall under traditional inputs, and won't work with usb passthrough.
 
-`virtio-input-host` is fairly easy to setup simply add. It does However comes at the detriment that you cannot use a hotkey to bind it back to the host without closing the VM. It accepts both `eventx` device files, as well as works with `by-id` paths. However the strength of it comes from being able to use any evdev device. This includes gamepads, some multitouch screens and more.
+`virtio-input-host` is fairly easy to setup simply add. It does However comes at the detriment that you cannot use a hotkey to bind it back to the host without closing the VM. It accepts both `eventx` device files, as well as works with `by-id` paths. However the strength of it comes from being able to use any evdev device. This includes gamepads, some multitouch screens and more. 
 
 The below to add a multi-touch device through to the VM.
 
@@ -71,7 +71,6 @@ Some people who add and remove options from qemu often may find that the current
 #!/bin/bash
 
 ## cd image "bliss.iso"
-
 array=(
 -enable-kvm
 -M q35
@@ -145,7 +144,7 @@ It may also be necssary to specify the `pcie-root-port` device.  Below is a smal
 
 ```
     -device pcie-root-port,id=pcie.1,bus=pcie.0,addr=1c.0,slot=1,chassis=1,multifunction=on \
-    -device vfio-pci,host=<function_address>,bus=pcie.1,addr=00.0,x-vga=on,multifunction=on\
+    -device vfio-pci,host=<function_address>,bus=pcie.1,addr=00.0,x-vga=on,multifunction=on \
     -device vfio-pci,host=<function_address>,bus=pcie.1,addr=00.1
 ```
 
@@ -232,8 +231,6 @@ In other cases you can use the below command to passthrough via hostbus and host
     -device usb-host,hostbus=bus,hostport=port
 ```
 
-
-
 It is always a good idea to append an appropriate ID to the device, in case of a keyboard, simply do `id=keyboard` in the case of a thumbdrive, you can do `id=usb-drive`. This is largely preference.
 
 For using spice, It will be explained in more depth below, however in the spice client you will need to enable usb-passthrough and select the appropriate device there.
@@ -242,12 +239,11 @@ For VFIO simply pass the appropriate USB controller through to the VM using vfio
 
 USB devices can be hotplugged using the Qemu Human Monitor explained below.
 
-## Low latency Pipewire audio
+## Low latency Pipewire/Jack audio
 
 Using qemu, we can instead of using pulse audio backend, use jack. this is very useful since we can use jack for higher quality and lower latency audio, as well as a highly configurable two way audio. this is great because Bliss and other android x86 operating systems have a quite high base latency. 
 
 using jack you can manage to cut a round trip from 240ms to 200ms. it's important to remeber that this is a <strong>Round Trip</strong> numbers, meaning the time it takes from audio to go from the host to the virtualized microphone, into android, to the speakers, and back to the host. this is not the android -> host latency, currently this is not something tested. however it could be anywhere from 1/3 of this to 2/3 of this. This will assume using pipewire since it is the easiest and most convient option.
-
 
 using `jack_lsp` to list ports we can connect to the ports I am interested are 
 
@@ -364,7 +360,9 @@ drive_add # add pci drive
 netdev_add # add nic
 change #ide1-cd0 /path/to/some.iso #change device config
 
-info #subcommand #print info about device
+info #subcommand (snapshot to view snapshots) #print info about device 
+savevm #creates a snapshot live, while the VM is still running
+loadvm #loads a snapshot while the VM is still running
 
 mouse_move #move the mouse
 screendump #screenshot.ppm # dump screen into ppm image
@@ -373,7 +371,13 @@ screendump #screenshot.ppm # dump screen into ppm image
 https://qemu-project.gitlab.io/qemu/system/monitor.html
 
 ## Memory Balooning and misc tweaks
-FINISH ME
+FINISHME
+
+Virtio Pmem
+KSM - same page merging (can suddenly blow up if not careful)
+huge pages
+
+https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/virtualization_tuning_and_optimization_guide/sect-virtualization_tuning_optimization_guide-memory-tuning#doc-wrapper
 
 ## Disk Optimization
 
@@ -401,11 +405,20 @@ full
 ```
 
 ### Compression
-FINISHME 
+Using compression to save space on your image can be a very valuble tool. while there are multiple ways to do this, but the focus of this will be on using qemu-img's qcow2 compression, you can simply run `qemu-img create -f qcow2 -o compression_type=zstd disk.qcow2 10G` and this will create a zstd compressed disk image for you to use. 
 
 ### Cache Modes
 
-Qemu supports a variety of disk write `cache` modes. FINISHME
+Qemu supports a variety of disk write `cache` modes. these cache modes can be changed to tweak I/O speed below are the ones qemu support, see the below link for an explanation on these. Using none will essentially be the best preformance option.
+
+```
+writethrough
+writeback
+none
+directsync
+unsafe
+```
+https://documentation.suse.com/sles/12-SP4/html/SLES-all/cha-cachemodes.html
 
 ### Custom cache size
 With qemu we can set both `cache` size and `l2 cache` size
@@ -429,9 +442,30 @@ Try increasing cluster size instead `qemu-img create -f qcow2 -o cluster_size=2M
 *Try mixing `2m cluster` and `metadata` for a good blend of preformance!*
 
 
-### Snapshots
-FINISHME
-### Raw Block Device and LVM
+### Backups and snapshtos
+utilizing snapshots is a key feature in doing development, as well as making sure that any downtime is minimal. This is particularly useful for preventing a corruption inside of the machine from causing a re-install. 
+
+There are two main ways of doing this, you can create a full backup of the drive. this is as simple as doing rclone. however this wastes a lot of space. so what we can do instead is use qemu-snapshot. qemu-snapshot redirectes the writes to a new image, so that you can save space. say you have `disk.qcow2` you can run the command `qemu-img create -f qcow2 -b disk.qcow2 disk-snap1.qcow2` and that will create a new image. Now you modify qemu to use `disk-snap1.qcow2` it will read from `disk.qcow2` but will never write to it. All modifications made are made in `disk-snap1.qcow2`. and to revert the snapshot, you can simply delete the `disk-snap1.qcow2`.
+
+Another use of this is to do `qemu-img create -f qcow2 -b base.qcow2 vm1.qcow2` && `qemu-img create -f qcow2 -b base.qcow2 vm2.qcow2`. by making two seperate snapshots, we can now run mutliple VMs each with their own unique writable disk, that is based on the `base.qcow2`. this is great for running multiple VMs without needing to waste space and setup time. **REMEBER** writing to the base disk will corrupt the snapshots. It's a wise idea to change the permissions of the base disk to read only, this prevents user error. Even prefoessionals with many hours can slip up and accidentally make an error. Remeber to practice safe VM handling.
+
+The above paragraph is about creating external snapshots which is great for when the VM is off, and should be done when you wish to create a new VM. However qemu also supports internal snapshots and live snapshots. The snapshots work internalling in the single qcow2 (or qed) image. It may not be as flexible, however it is bother faster, and for many people more convient and nice to use internal snapshots.
+
+using the human monitor above it is shown the commands `savevm` `loadvm` `info snapshots` these can be used to save, load and view the current snapshots availible. live snapshots save the entire state of the `cpu`, `devices`, `Ram`, as well as the entire disk contents, so the live snapshots can be a good amount larger. It is very akin to using an emulator "save state". 
+
+Removable devices can sometimes cause issues, so it's prefered to disconnect any before taking a snapshot and before loading one. However as long as all the devices are there when the snapshot is made and loaded it will be fine.
+
+### full device passthrough
+
+Sata Controller;
+Nvme block
+    use vfio-pci
+    `qemu-system-x86_64 -drive file=nvme://HOST:BUS:SLOT.FUNC/NAMESPACE`
+
+Raw block device
+
+LVM
+
 FINISHME
 
 ### IoThread
@@ -443,7 +477,7 @@ IO threads can help both raw and qcow2 when using virtio drives
 -device virtio-blk-pci,iothread=iothread0,id=...
 -device virtio-scsi-pci,iothread=iothread0,id=...
 ```
-### EroFS to SFS (or the other way around)
+### EroFS to SFS and the other way around.
 
 Bliss Is currently shipping with `EroFS`. `EroFS` is has the best raw read speed of the supported read only filesystems. however it has a significant compromise in being the compression. `EroFS` only supports `LZMA` and `LZ4` compression. `LZMA` is too slow for viable use across the board, so `LZ4` is used. The issue is that `LZ4` is but one of many compression formats, and while it has the best decompression speed, it certainly doesn't have the best compression.
 
